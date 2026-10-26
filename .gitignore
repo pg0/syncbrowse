@@ -1,3 +1,4 @@
 syncbrowse.db
 __pycache__/
 .pytest_cache/
+rs/target/

@@ -65,8 +65,12 @@ fn main() {
 fn app_window(url: &str) -> Result<(), String> {
     use tao::event::{Event, WindowEvent};
     use tao::event_loop::{ControlFlow, EventLoop};
+    use tao::platform::windows::{IconExtWindows, WindowBuilderExtWindows};
+    use tao::window::{Icon, Theme};
     let events = EventLoop::new();
+    let icon = || Icon::from_resource(1, None).ok(); // put into the exe by build.rs
     let window = tao::window::WindowBuilder::new().with_title("syncbrowse").with_maximized(true)
+        .with_theme(Some(Theme::Dark)).with_window_icon(icon()).with_taskbar_icon(icon())
         .build(&events).map_err(|e| e.to_string())?;
     // WebView2 keeps its profile here instead of a folder next to the exe
     let mut ctx = wry::WebContext::new(Some(index::app_dir().join("webview")));
