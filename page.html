@@ -1,0 +1,349 @@
+<!doctype html><meta charset="utf-8"><title>syncbrowse</title>
+<style>
+body{margin:0;display:grid;grid-template:1fr auto/280px 1fr;height:100vh;font:13px system-ui,sans-serif;background:#18191d;color:#ddd}
+footer{grid-column:1/-1;display:flex;gap:24px;padding:4px 10px;background:#1f2025;border-top:1px solid #2c2d33;color:#888;white-space:nowrap}
+footer span:last-child{overflow:hidden;text-overflow:ellipsis}
+#side{min-height:0;display:flex;flex-direction:column;background:#1f2025;border-right:1px solid #2c2d33}
+#head{padding:10px;border-bottom:1px solid #2c2d33;color:#999;line-height:1.7}
+#head .row{display:flex;align-items:center;gap:8px}
+#t,#ign{flex:1}
+#ign{min-width:0;background:#111;color:#ddd;border:1px solid #2c2d33;border-radius:3px;padding:3px 6px}
+#status{color:#8c8}
+#list{overflow:auto;flex:1;padding:6px}
+#list div{padding:7px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:4px;color:#cfd3dc}
+#list div:hover{background:#2c2d33}
+#main{min-width:0;min-height:0;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:12px;padding:12px 16px}
+.bar h1{flex:1;margin:0;font-size:16px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar small,.bar label{color:#999}
+.bar button{background:#2c2d33} .bar button:hover{background:#3a3b43}
+#gallery{flex:1;overflow:auto}
+#gallery>.bar{position:sticky;top:0;z-index:1;background:#18191d}
+#grid{display:flex;flex-direction:column;gap:6px;padding:0 16px 16px}
+.line{display:flex;gap:6px;align-items:flex-start}
+.tile{position:relative;min-width:0;cursor:pointer;background:#000;overflow:hidden}
+#tv,#gper,#vper{width:4em;background:#111;color:#ddd;border:1px solid #2c2d33;border-radius:3px;padding:2px 4px}
+.tile img{width:100%;height:100%;object-fit:cover;display:block}
+.tile:hover img{opacity:.8}
+.dup{position:absolute;top:6px;right:6px;display:flex;align-items:center;gap:4px;padding:2px 7px;border-radius:10px;background:#5b4fe9;color:#fff;font-size:12px;box-shadow:0 1px 3px #0008}
+#view{flex:1;min-height:0;display:none;flex-direction:column}
+#figs{flex:1;min-height:0;display:grid;grid-auto-rows:minmax(260px,1fr);gap:8px;padding:0 8px 8px;overflow-y:auto;user-select:none}
+figure{margin:0;min-width:0;min-height:0;display:flex;flex-direction:column}
+.box{position:relative;flex:1;min-height:0;overflow:hidden;cursor:grab;background:#000}
+.box:active{cursor:grabbing}
+.box img{position:absolute;transform-origin:0 0;visibility:hidden;pointer-events:none}
+.box[data-pct]::after{content:attr(data-pct);position:absolute;top:6px;left:6px;padding:1px 6px;border-radius:3px;background:#000b;color:#fff}
+figcaption{display:flex;gap:8px;align-items:center;padding:6px 2px;color:#aaa}
+figcaption .txt{flex:1;min-width:0;line-height:1.5}
+figcaption .txt div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+figcaption .path{direction:rtl;text-align:left;color:#ddd}  /* cut long paths at the start, keep the file name */
+figure:first-child figcaption{color:#fff}
+button{background:#5b4fe9;color:#fff;border:0;border-radius:4px;padding:5px 12px;cursor:pointer}
+button:hover{background:#6e63f0}
+figcaption button{background:#2c2d33;flex:none} figcaption button:hover{background:#3a3b43}
+figcaption .del{background:#5a1f1f} figcaption .del:hover{background:#8a2a2a}
+.seg{display:flex;align-items:center} .seg button{border-radius:0;border-left:1px solid #18191d}
+.seg button:first-of-type{border-radius:4px 0 0 4px;border-left:0} .seg button:last-of-type{border-radius:0 4px 4px 0}
+.seg span{margin-left:6px;color:#999}
+#dbpath{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;color:#ccc}
+#head .row .tog{padding:3px 8px}
+.bar .tog.on,#head .tog.on{background:#5b4fe9} #head .tog{background:#2c2d33} #head .row[hidden]{display:none}
+</style>
+<div id="side">
+  <div id="head">
+    <button id="pick">Choose folder …</button>
+    <div class="row">Tolerance <input id="t" type="range" min="0" max="80" value="10"> <input id="tv" type="number" min="0" max="80" value="10"></div>
+    <div>0 identical &middot; 0–5 re-encoded/scaled &middot; 14+ burst shot &middot; 87+ unrelated</div>
+    <div class="row">Ignore <input id="ign" placeholder=".coral, @eaDir, *cache*"
+      title="Folder names to skip, wildcards allowed, a/b for nested folders. Enter applies and drops them from the index."></div>
+    <div class="row" id="dbrow" hidden>Index <span id="dbpath"></span>
+      <button id="dbmove" class="tog" title="Choose the folder the index file lives in. An index already there is used instead.">Move…</button>
+      <button id="dbreset" class="tog" title="Forget every fingerprint. Pictures stay untouched.">Reset</button></div>
+  </div>
+  <div id="list"></div>
+</div>
+<div id="main">
+  <div id="gallery"><div class="bar"><h1 id="title"></h1><small id="count"></small>
+    <label>per row <input id="gper" type="number" min="1" max="30" value="6"></label>
+    <button id="rec" class="tog">recursive</button><button id="only" class="tog">duplicates only</button>
+    <button id="raw" class="tog" hidden title="Camera raw files (ARW, CR2, CR3, NEF, DNG …): about 0.3–2 s each to hash. Off removes them from the index.">RAW</button></div><div id="grid"></div></div>
+  <div id="view"><div class="bar"><button id="back">&larr; Gallery</button><h1 id="name"></h1><small id="hits"></small>
+    <label>per row <input id="vper" type="number" min="1" max="12" value="3"></label>
+    <label><input type="checkbox" id="same"> same pixel size</label><button id="fitb">Fit</button>
+    <div class="seg"><button data-p="1">100</button><button data-p="2">200</button><button data-p="4">400</button><span>%</span></div></div><div id="figs"></div></div>
+</div>
+<footer><span id="status"></span><span>Click a picture to compare &middot; &larr;&rarr; flip &middot; wheel zooms &middot; left-drag pans &middot; double-click fits &middot; Esc gallery &middot; 100 % = 1 picture pixel per screen pixel</span></footer>
+<script>
+const $ = s => document.querySelector(s);
+const DUP ='<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">'
+  + '<rect x="1" y="5" width="10" height="10" rx="2"/><path d="M5 5V3a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2"/></svg>';
+let here = '', all = [], files = [], idx = -1, shown = null, seq = 0, dirSeq = 0, ref = null, z = {s: 1, cx: .5, cy: .5}, drag = null, wasScanning = false;
+const on = s => $(s).classList.contains('on');  // toggle buttons
+const get = (u, p) => fetch(`${u}?p=${encodeURIComponent(p)}&t=${$('#t').value}&r=${+on('#rec')}`).then(r => r.json());
+const post = (u, p, extra = '') => fetch(`${u}?p=${encodeURIComponent(p)}${extra}`,
+  {method: 'POST', headers: {'X-Syncbrowse': '1'}}).then(r => r.json());
+const base = p => p.split('\\').pop();
+const tail = p => p.split('\\').slice(-2).join('\\');
+
+function item(text, cls, onclick) {
+  const d = document.createElement('div');
+  d.textContent = text; d.className = cls; d.onclick = onclick;
+  return d;
+}
+
+function tile(f, i) {
+  const t = document.createElement('div'), img = new Image();
+  // widths in proportion to the aspect ratios give every picture of a line the same height
+  const size = (w, h) => Object.assign(t.style, {flex: `${w / h} 1 0`, aspectRatio: w / h});
+  t.className = 'tile'; t.title = f.path.slice(here.length).replace(/^\\/, ''); t.onclick = () => show(i);
+  img.loading = 'lazy'; img.src = '/thumb?p=' + encodeURIComponent(f.path);
+  size(f.w || 1, f.h || 1);
+  if (!f.w) img.onload = () => size(img.naturalWidth, img.naturalHeight);  // not indexed yet
+  t.append(img);
+  if (f.dups) {
+    const b = document.createElement('span');
+    b.className = 'dup'; b.innerHTML = DUP; b.append(f.dups); b.title = `${f.dups} more version(s) in the index`;
+    t.append(b);
+  }
+  return t;
+}
+
+function figure(p, info, isRef) {
+  const f = document.createElement('figure'), box = document.createElement('div'), img = new Image();
+  const cap = document.createElement('figcaption'), txt = document.createElement('div'), del = document.createElement('button');
+  const path = document.createElement('div'), meta = document.createElement('div');
+  box.className = 'box'; txt.className = 'txt'; path.className = 'path'; meta.className = 'meta'; f.dataset.info = info;
+  path.textContent = '‎' + p + '‎';  // LRM marks: rtl cutting must not move the leading \\ to the end
+  txt.append(path, meta);
+  img.src = '/img?p=' + encodeURIComponent(p);
+  img.draggable = false;
+  img.onload = () => {
+    if (!f.isConnected) return;  // flipped on before it loaded: must not set the shape of the next picture
+    if (isRef) ref = {w: img.naturalWidth, h: img.naturalHeight};
+    fit();
+  };
+  txt.title = p;
+  get('/api/meta', p).then(m => { f.dataset.tool = m.tool; txt.title = p + (m.prompt && '\n\n' + m.prompt); fit(); });
+  const open = document.createElement('button'), copy = document.createElement('button');
+  open.textContent = 'Open'; open.title = 'Open in the default viewer'; open.onclick = () => post('/api/open', p);
+  copy.textContent = 'Copy path';
+  copy.onclick = () => navigator.clipboard.writeText(p).then(() => {
+    copy.textContent = 'Copied'; setTimeout(() => copy.textContent = 'Copy path', 1500); });
+  del.className = 'del'; del.textContent = 'Delete'; del.onclick = () => remove(p, f);
+  box.append(img); cap.append(txt, open, copy, del); f.append(box, cap);
+  return f;
+}
+
+// Every picture is stretched into one rectangle shaped like the clicked one. Matches differ in aspect ratio by at
+// most 2 % (server rule), invisible as stretch; letterboxing each on its own makes them drift apart under zoom.
+function fit() {  // "per row" pictures side by side, the rest wraps; rows share the height, below 260 px it scrolls
+  const n = Math.max(1, +$('#vper').value || 3);
+  $('#figs').style.gridTemplateColumns = `repeat(${Math.min(n, $('#figs').children.length || 1)}, minmax(0, 1fr))`;
+  if (!ref) return;
+  const a = ref.w / ref.h;
+  $('#figs').querySelectorAll('figure').forEach(f => {
+    const box = f.firstChild, img = box.firstChild, w = Math.min(box.clientWidth, box.clientHeight * a), h = w / a;
+    Object.assign(img.style, {width: w + 'px', height: h + 'px', left: (box.clientWidth - w) / 2 + 'px',
+      top: (box.clientHeight - h) / 2 + 'px', visibility: 'visible'});
+    f.querySelector('.meta').textContent = [img.naturalWidth && `${img.naturalWidth}x${img.naturalHeight}`,
+      f.dataset.info, f.dataset.tool].filter(Boolean).join(' · ');
+  });
+  applyZoom();
+}
+
+async function openDir(p, keep = false) {
+  const my = ++dirSeq, d = await get('/api/dir', p);
+  if (my !== dirSeq) return;  // an older answer (slider moved on) must not overwrite the badges of the newer one
+  if (d.error) return alert(d.error);
+  here = d.path; all = d.files;
+  $('#list').replaceChildren(
+    ...(d.parent ? [item('..', 'dir', () => openDir(d.parent))] : []),
+    ...d.dirs.map(x => item(base(x), 'dir', () => openDir(x))));
+  $('#title').textContent = d.path;
+  $('#count').textContent = `${all.length} pictures · ${all.filter(f => f.dups).length} with duplicates`
+    + (d.folded ? ` · ${d.folded} more versions folded into their tiles` : '');
+  render();
+  poll(false);
+  if (!keep) { closeView(); $('#gallery').scrollTop = 0; }
+}
+
+function render() {  // arrow keys in the comparison flip through the filtered list too
+  files = on('#only') ? all.filter(f => f.dups) : all;
+  // a new list (slider, scan end) shifts positions: the open comparison follows its picture, not its index
+  if (shown) idx = files.findIndex(f => f.path === shown);
+  const n = Math.max(1, +$('#gper').value || 6), lines = [];
+  for (let i = 0; i < files.length; i += n) {
+    const part = files.slice(i, i + n), line = document.createElement('div');
+    line.className = 'line';
+    line.append(...part.map((f, k) => tile(f, i + k)));
+    if (part.length < n) {  // the last line keeps the size of a full one instead of stretching
+      const ar = part.reduce((s, f) => s + (f.w ? f.w / f.h : 1), 0) / part.length;
+      line.append(Object.assign(document.createElement('i'), {style: `flex: ${ar * (n - part.length)} 1 0`}));
+    }
+    lines.push(line);
+  }
+  $('#grid').replaceChildren(...lines);
+}
+
+function show(i) {
+  if (i < 0 || i >= files.length) return;
+  idx = i; shown = files[i].path; z = {s: 1, cx: .5, cy: .5}; ref = null;
+  $('#gallery').style.display = 'none'; $('#view').style.display = 'flex';
+  $('#name').textContent = `${i + 1}/${files.length} · ${tail(files[i].path)}`;
+  $('#hits').textContent = '';
+  $('#figs').replaceChildren(figure(files[i].path, 'clicked picture', true));
+  applyZoom();
+  loadMatches();
+}
+
+function closeView() {
+  $('#view').style.display = 'none'; $('#gallery').style.display = '';
+  $('#grid').querySelectorAll('.tile')[idx]?.scrollIntoView({block: 'nearest'});
+  $('#figs').replaceChildren();
+  idx = -1; shown = null; seq++;
+}
+
+async function loadMatches() {
+  if (!shown) return;
+  const my = ++seq, cur = $('#figs').firstChild;
+  const m = await get('/api/match', shown);
+  if (my !== seq) return;  // user already flipped further or moved the slider again
+  $('#figs').replaceChildren(cur);
+  // in the bar, not beside the picture: a late extra item there squeezed the picture after it had loaded
+  $('#hits').textContent = m.length ? '' : 'no matches in the index';
+  $('#figs').append(...m.map(x => figure(x.path, `distance ${x.dist}`)));
+  fit();
+}
+
+async function poll(again = true) {
+  const s = await get('/api/status', here);
+  $('#status').textContent = (!s.running ? `Index: ${s.here} here · ${s.indexed} total`
+    : `Scanning ${s.folder}: ` + (s.total ? `hashing ${s.done}/${s.total} new or changed of ${s.found} pictures`
+      : `reading folders, ${s.found} pictures found …`))
+    + (s.thumbs ? ` · making ${s.thumbs} thumbnail${s.thumbs > 1 ? 's' : ''} …` : '');
+  $('#status').title = s.running ? s.folder : 'total = every folder scanned so far';
+  if (document.activeElement !== $('#ign')) $('#ign').value = s.ignore;
+  $('#raw').hidden = s.raw === undefined;  // only the exe decodes raw files and can move its index
+  $('#raw').classList.toggle('on', !!s.raw);
+  $('#dbrow').hidden = s.db === undefined;
+  if (s.db) { $('#dbpath').textContent = '‎' + s.db + '‎'; $('#dbpath').title = s.db; }
+  if (wasScanning && !s.running) { openDir(here, true); loadMatches(); }
+  wasScanning = s.running;
+  if (again) setTimeout(poll, s.running || s.thumbs ? 1000 : 3000);  // the one polling loop, started below
+}
+
+$('#dbmove').onclick = async () => {
+  const r = await post('/api/db/move', here);
+  if (r.error) return alert(r.error);
+  if (r.existed) alert(`Using the index that was already in that folder:\n${r.path}`);
+  openDir(here, true);
+};
+$('#dbreset').onclick = async () => {
+  if (!confirm('Forget every fingerprint in the index? Pictures stay untouched; scan folders again to rebuild it.')) return;
+  const r = await post('/api/db/reset', here);
+  if (r.error) return alert(r.error);
+  openDir(here, true);
+};
+
+$('#ign').onchange = async () => {
+  await post('/api/ignore', here, '&v=' + encodeURIComponent($('#ign').value));
+  openDir(here, true);
+};
+
+$('#pick').onclick = async () => {
+  const r = await post('/api/pick', here);
+  if (!r.path) return;
+  if (!r.scanning) alert('A scan is already running, this folder was not scanned.');
+  await openDir(r.path);
+};
+
+async function remove(p, fig) {
+  let r = await post('/api/delete', p);
+  if (r.confirm && confirm(`${p}\n\nis on a network drive without a recycle bin. Delete permanently?`)) {
+    r = await post('/api/delete', p, '&force=1');
+  }
+  if (r.error) return alert(r.error);
+  if (!r.ok) return;
+  const i = files.findIndex(f => f.path === p);
+  await openDir(here, true);  // fresh badges, deleted picture gone
+  if (i < 0) { fig.remove(); fit(); }
+  else if (files.length) show(Math.min(i, files.length - 1));
+  else closeView();
+}
+
+// z.s scales the clicked picture's rectangle, z.cx/cy is the picture point (fraction of the rectangle) at the box
+// centre. Synchronous: every picture uses z.s, so all show the same area. "Same pixel size": each one is scaled by
+// its width relative to the clicked one, so all show the same percentage. 100 % = one picture pixel per device pixel.
+const scaleOf = img => $('#same').checked && img.naturalWidth && ref ? z.s * img.naturalWidth / ref.w : z.s;
+function applyZoom() {
+  $('#figs').querySelectorAll('.box').forEach(box => {
+    const img = box.firstChild, s = scaleOf(img);
+    img.style.transform = `translate(${(.5 - z.cx * s) * 100}%, ${(.5 - z.cy * s) * 100}%) scale(${s})`;
+    if (img.naturalWidth && img.offsetWidth)
+      box.dataset.pct = Math.round(img.offsetWidth * s * devicePixelRatio / img.naturalWidth * 100) + ' %';
+  });
+}
+$('#figs').addEventListener('wheel', e => {
+  const box = e.target.closest('.box'), img = box?.firstChild;
+  if (!img?.offsetWidth) return;
+  e.preventDefault();
+  const r = box.getBoundingClientRect();
+  const fx = (e.clientX - r.left - img.offsetLeft) / img.offsetWidth - .5, fy = (e.clientY - r.top - img.offsetTop) / img.offsetHeight - .5;
+  const u = z.cx + fx / scaleOf(img), v = z.cy + fy / scaleOf(img);  // picture point under the cursor stays put
+  z.s = Math.min(64, Math.max(1, z.s * (e.deltaY < 0 ? 1.25 : 0.8)));
+  z = z.s === 1 ? {s: 1, cx: .5, cy: .5} : {s: z.s, cx: u - fx / scaleOf(img), cy: v - fy / scaleOf(img)};
+  applyZoom();
+}, {passive: false});
+document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
+  const img = $('#figs .box img');  // the clicked picture gets exactly this percentage
+  if (img?.naturalWidth) z.s = b.dataset.p / (img.offsetWidth * devicePixelRatio / img.naturalWidth);
+  applyZoom();
+});
+$('#same').onchange = applyZoom;
+$('#only').onclick = () => { $('#only').classList.toggle('on'); render(); };
+$('#rec').onclick = () => { $('#rec').classList.toggle('on'); openDir(here); };
+$('#raw').onclick = async () => {
+  await post('/api/raw', here, '&v=' + +!on('#raw'));
+  openDir(here, true);  // poll inside shows the new state
+};
+// A left-drag over an image starts Chrome's native drag-and-drop, which swallows the pointer events (right-drag
+// panned, left did not): the images ignore the pointer and any drag start is cancelled.
+$('#figs').ondragstart = e => e.preventDefault();
+$('#figs').addEventListener('pointerdown', e => {
+  const box = e.target.closest('.box');
+  if (e.button !== 0 || !box) return;
+  e.preventDefault();
+  box.setPointerCapture(e.pointerId);  // keep panning when the cursor leaves the box
+  drag = box.firstChild;
+});
+addEventListener('pointermove', e => {
+  if (!drag) return;
+  const s = scaleOf(drag);
+  z.cx -= e.movementX / drag.offsetWidth / s; z.cy -= e.movementY / drag.offsetHeight / s;
+  applyZoom();
+});
+addEventListener('pointerup', () => drag = null);
+addEventListener('pointercancel', () => drag = null);
+addEventListener('resize', fit);
+$('#figs').ondblclick = $('#fitb').onclick = () => { z = {s: 1, cx: .5, cy: .5}; applyZoom(); };
+$('#back').onclick = closeView;
+
+let slide;
+const retolerate = () => { clearTimeout(slide); slide = setTimeout(() => { openDir(here, true); loadMatches(); }, 120); };
+$('#t').oninput = () => { $('#tv').value = $('#t').value; retolerate(); };
+$('#tv').oninput = () => {  // the slider clamps to 0..80; an empty field would put it at its middle
+  if ($('#tv').value === '') return;
+  $('#t').value = $('#tv').value; retolerate();
+};
+$('#tv').onchange = () => $('#tv').value = $('#t').value;
+$('#gper').oninput = render;
+$('#vper').oninput = fit;
+document.onkeydown = e => {
+  if (!shown || (e.target.tagName === 'INPUT' && e.key !== 'Escape')) return;  // arrows step a number field
+  if (e.key === 'Escape') closeView();
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { show(idx + 1); e.preventDefault(); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { show(idx - 1); e.preventDefault(); }
+};
+openDir('');
+poll();
+</script>
