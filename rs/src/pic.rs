@@ -89,7 +89,7 @@ impl Drop for RawSlot {
 /// Real raw development, not the embedded preview: some cameras (Sony ZV-E1) embed a 16:9 preview of a 3:2 photo,
 /// which never matches the camera JPEG.
 fn raw(path: &str) -> Result<(DynamicImage, u32, u32), String> {
-    use rawler::imgop::develop::RawDevelop;
+    use flashraw::{DecodeOptions, FlashRaw, OutputFormat, RawPixelData};
     {
         let mut n = RAW_SLOTS.0.lock().unwrap();
         while *n >= RAW_AT_ONCE {
@@ -98,12 +98,18 @@ fn raw(path: &str) -> Result<(DynamicImage, u32, u32), String> {
         *n += 1;
     }
     let _slot = RawSlot;
-    let r = rawler::decode_file(path).map_err(err)?;
-    let o = raw_orientation(r.orientation);
-    let mut img = RawDevelop::default().develop_intermediate(&r).map_err(err)?.to_dynamic_image().ok_or("raw develop failed")?;
-    img.apply_orientation(Orientation::from_exif(o).unwrap_or(Orientation::NoTransforms));
-    let (w, h) = (img.width(), img.height());
-    Ok((img, w, h))
+    let f = FlashRaw::open_path(path).map_err(err)?
+        .decode(DecodeOptions { output: OutputFormat::Rgba8, ..Default::default() }).map_err(err)?;
+    let (w, h) = (f.width(), f.height());
+    let RawPixelData::U8(mut px) = f.data else { return Err("raw develop failed".into()) };
+    // alpha is always opaque: drop it in place rather than copy a few hundred MB
+    let n = w as usize * h as usize;
+    for i in 0..n {
+        px.copy_within(i * 4..i * 4 + 3, i * 3);
+    }
+    px.truncate(n * 3);
+    let img = RgbImage::from_raw(w, h, px).ok_or("raw develop failed")?;
+    Ok((DynamicImage::ImageRgb8(img), w, h))
 }
 
 /// RGB with transparency shown on white, as dupimg judges it.
@@ -170,24 +176,13 @@ fn jpeg_bytes(img: &RgbImage, quality: u8) -> Result<Vec<u8>, String> {
 /// The largest JPEG the camera embedded (as coral's gallery does): no development, camera colours. May show a
 /// different crop than the raw (16:9 of a 3:2 photo), fine for a tile but never for the hash.
 fn raw_preview(path: &str) -> Option<DynamicImage> {
-    use rawler::decoders::RawDecodeParams;
-    let src = rawler::rawsource::RawSource::new(Path::new(path)).ok()?;
-    let dec = rawler::get_decoder(&src).ok()?;
-    let params = RawDecodeParams::default();
-    let mut img = dec.preview_image(&src, &params).ok().flatten()
-        .or_else(|| dec.thumbnail_image(&src, &params).ok().flatten())
+    let raw = flashraw::FlashRaw::open_path(path).ok()?;
+    let p = raw.preview()?;
+    let rgb = raw.decode_preview_rgb(p).ok()?;
+    let mut img = Some(DynamicImage::ImageRgb8(RgbImage::from_raw(rgb.width, rgb.height, rgb.rgb)?))
         .filter(|i| i.width().min(i.height()) >= THUMB / 2)?; // a 160 px thumbnail would look blurred
-    let o = rawler::decode_dummy(&src).map(|r| r.orientation).ok()?;
-    img.apply_orientation(Orientation::from_exif(raw_orientation(o)).unwrap_or(Orientation::NoTransforms));
+    img.apply_orientation(Orientation::from_exif(p.orientation.exif() as u8).unwrap_or(Orientation::NoTransforms));
     Some(img)
-}
-
-fn raw_orientation(o: rawler::Orientation) -> u8 {
-    use rawler::Orientation as O;
-    match o {
-        O::HorizontalFlip => 2, O::Rotate180 => 3, O::VerticalFlip => 4, O::Transpose => 5,
-        O::Rotate90 => 6, O::Transverse => 7, O::Rotate270 => 8, _ => 1,
-    }
 }
 
 pub fn thumb(path: &str) -> Result<Vec<u8>, String> {
